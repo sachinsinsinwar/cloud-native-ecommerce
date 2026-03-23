@@ -1,0 +1,225 @@
+# =============================================================================
+# POSTGRESQL STATEFULSET WITH PERSISTENT STORAGE
+# =============================================================================
+# Why StatefulSet instead of Deployment?
+# - Stable, persistent storage (each pod gets its own PVC)
+# - Stable network identity (predictable pod names)
+# - Ordered deployment and scaling
+# - Perfect for databases that need persistent state
+# =============================================================================
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: ecommerce
+  labels:
+    app: postgres
+spec:
+  # Headless service for StatefulSet
+  # Why headless? Direct pod-to-pod communication with stable DNS
+  clusterIP: None
+  selector:
+    app: postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+
+---
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: ecommerce
+  labels:
+    app: postgres
+spec:
+  # Service name for stable network identity
+  serviceName: postgres
+  
+  # Single replica for database (increase for HA with replication)
+  replicas: 1
+  
+  selector:
+    matchLabels:
+      app: postgres
+      
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      # Security context for the pod
+      securityContext:
+        fsGroup: 999  # Postgres group ID
+        runAsNonRoot: true
+        runAsUser: 999  # Postgres user ID
+        
+      containers:
+      - name: postgres
+        image: postgres:14-alpine
+        
+        # Resource limits - adjust based on your needs
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+            
+        ports:
+        - name: postgres
+          containerPort: 5432
+          protocol: TCP
+          
+        # Environment variables from ConfigMap and Secrets
+        env:
+        - name: POSTGRES_DB
+          valueFrom:
+            configMapKeyRef:
+              name: ecommerce-config
+              key: POSTGRES_DB
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: postgres-credentials
+              key: POSTGRES_USER
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-credentials
+              key: POSTGRES_PASSWORD
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+          
+        # Volume mounts
+        volumeMounts:
+        - name: postgres-data
+          mountPath: /var/lib/postgresql/data
+        - name: init-scripts
+          mountPath: /docker-entrypoint-initdb.d
+          readOnly: true
+          
+        # Liveness probe - is the container alive?
+        livenessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - postgres
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+          
+        # Readiness probe - is the container ready to serve traffic?
+        readinessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - postgres
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          
+      # Additional volumes
+      volumes:
+      - name: init-scripts
+        configMap:
+          name: postgres-init-scripts
+          
+  # VolumeClaimTemplates - creates PVC for each pod
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      # Storage class - adjust based on cloud provider
+      # Examples: gp2 (AWS), standard (GKE), managed-premium (Azure)
+      storageClassName: standard
+      resources:
+        requests:
+          storage: 10Gi
+
+---
+
+# =============================================================================
+# CONFIGMAP FOR DATABASE INITIALIZATION SCRIPTS
+# =============================================================================
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init-scripts
+  namespace: ecommerce
+  labels:
+    app: postgres
+data:
+  # Schema initialization script
+  01-init.sql: |
+    -- Create tables if they don't exist
+    CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        username VARCHAR(80) UNIQUE NOT NULL,
+        email VARCHAR(120) UNIQUE NOT NULL,
+        password_hash VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS products (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(200) NOT NULL,
+        description TEXT,
+        price DECIMAL(10, 2) NOT NULL,
+        category VARCHAR(50),
+        stock_quantity INTEGER DEFAULT 0,
+        image_url TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS cart_items (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        product_id INTEGER REFERENCES products(id) ON DELETE CASCADE,
+        quantity INTEGER NOT NULL DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(user_id, product_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS orders (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        total_amount DECIMAL(10, 2) NOT NULL,
+        status VARCHAR(20) DEFAULT 'pending',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS order_items (
+        id SERIAL PRIMARY KEY,
+        order_id INTEGER REFERENCES orders(id) ON DELETE CASCADE,
+        product_id INTEGER REFERENCES products(id),
+        quantity INTEGER NOT NULL,
+        price DECIMAL(10, 2) NOT NULL
+    );
+
+    -- Create indexes for better query performance
+    CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
+    CREATE INDEX IF NOT EXISTS idx_cart_user ON cart_items(user_id);
+    CREATE INDEX IF NOT EXISTS idx_orders_user ON orders(user_id);
+
+  # Sample data seeding script
+  02-seed.sql: |
+    -- Insert sample products (only if table is empty)
+    INSERT INTO products (name, description, price, category, stock_quantity, image_url)
+    SELECT * FROM (VALUES
+        ('Laptop Pro', 'High-performance laptop', 1299.99, 'Electronics', 50, 'https://images.unsplash.com/photo-1496181133206-80ce9b88a853?w=400'),
+        ('Wireless Mouse', 'Ergonomic wireless mouse', 29.99, 'Electronics', 200, 'https://images.unsplash.com/photo-1527864550417-7fd91fc51a46?w=400'),
+        ('USB-C Cable', 'Fast charging cable', 19.99, 'Electronics', 500, 'https://images.unsplash.com/photo-1583863788434-e58a36330cf0?w=400'),
+        ('Coffee Maker', 'Automatic coffee machine', 89.99, 'Home', 75, 'https://images.unsplash.com/photo-1517668808822-9ebb02f2a0e6?w=400'),
+        ('Running Shoes', 'Comfortable running shoes', 79.99, 'Sports', 120, 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=400')
+    ) AS v(name, description, price, category, stock_quantity, image_url)
+    WHERE NOT EXISTS (SELECT 1 FROM products LIMIT 1);

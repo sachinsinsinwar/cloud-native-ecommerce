@@ -1,0 +1,158 @@
+# =============================================================================
+# REDIS DEPLOYMENT AND SERVICE
+# =============================================================================
+# Why Deployment (not StatefulSet)?
+# - Redis is used as cache (ephemeral data is acceptable)
+# - Easy horizontal scaling for read replicas
+# - If you need persistence, consider StatefulSet with Redis Cluster
+# =============================================================================
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: ecommerce
+  labels:
+    app: redis
+spec:
+  # ClusterIP service (internal only)
+  type: ClusterIP
+  selector:
+    app: redis
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: 6379
+      protocol: TCP
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: ecommerce
+  labels:
+    app: redis
+spec:
+  # Can scale for read replicas
+  replicas: 1
+  
+  # Deployment strategy
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+      
+  selector:
+    matchLabels:
+      app: redis
+      
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      # Security context
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        fsGroup: 999
+        
+      containers:
+      - name: redis
+        image: redis:7-alpine
+        
+        # Resource limits
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "250m"
+            
+        ports:
+        - name: redis
+          containerPort: 6379
+          protocol: TCP
+          
+        # Redis configuration arguments
+        args:
+        - redis-server
+        - --appendonly
+        - "yes"
+        - --appendfsync
+        - everysec
+        - --maxmemory
+        - 200mb
+        - --maxmemory-policy
+        - allkeys-lru
+        # Uncomment if using password authentication
+        # - --requirepass
+        # - $(REDIS_PASSWORD)
+        
+        # Environment variables (if using password)
+        # env:
+        # - name: REDIS_PASSWORD
+        #   valueFrom:
+        #     secretKeyRef:
+        #       name: ecommerce-secrets
+        #       key: REDIS_PASSWORD
+        
+        # Volume for AOF persistence
+        volumeMounts:
+        - name: redis-data
+          mountPath: /data
+          
+        # Liveness probe
+        livenessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+          
+        # Readiness probe
+        readinessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          
+      volumes:
+      - name: redis-data
+        # EmptyDir for cache (data lost on pod restart)
+        # For persistence, use PersistentVolumeClaim instead
+        emptyDir: {}
+        
+        # Alternative: Use PVC for persistence
+        # persistentVolumeClaim:
+        #   claimName: redis-pvc
+
+---
+
+# =============================================================================
+# OPTIONAL: REDIS PVC FOR PERSISTENT CACHE
+# =============================================================================
+# Uncomment if you want Redis data to persist across pod restarts
+
+# apiVersion: v1
+# kind: PersistentVolumeClaim
+# metadata:
+#   name: redis-pvc
+#   namespace: ecommerce
+# spec:
+#   accessModes:
+#     - ReadWriteOnce
+#   storageClassName: standard
+#   resources:
+#     requests:
+#       storage: 1Gi

@@ -1,0 +1,261 @@
+# =============================================================================
+# BACKEND (FLASK API) DEPLOYMENT AND SERVICE
+# =============================================================================
+# Why Deployment?
+# - Stateless application (no persistent data in pods)
+# - Easy horizontal scaling
+# - Rolling updates for zero-downtime deployments
+# =============================================================================
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: ecommerce
+  labels:
+    app: backend
+spec:
+  # ClusterIP - internal service for frontend to access
+  type: ClusterIP
+  selector:
+    app: backend
+  ports:
+    - name: http
+      port: 5000
+      targetPort: 5000
+      protocol: TCP
+  # Session affinity for sticky sessions (optional)
+  sessionAffinity: None
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: ecommerce
+  labels:
+    app: backend
+spec:
+  # Horizontal scaling - adjust based on load
+  replicas: 3
+  
+  # Deployment strategy for zero-downtime updates
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1        # Max 1 extra pod during update
+      maxUnavailable: 0  # Ensure at least all replicas running
+      
+  selector:
+    matchLabels:
+      app: backend
+      
+  template:
+    metadata:
+      labels:
+        app: backend
+        version: v1  # For traffic management/canary deployments
+      annotations:
+        # Prometheus scraping annotations (if using monitoring)
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "5000"
+        prometheus.io/path: "/metrics"
+    spec:
+      # Security context for the pod
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        
+      # Init container to wait for database
+      initContainers:
+      - name: wait-for-postgres
+        image: busybox:1.35
+        command:
+        - sh
+        - -c
+        - |
+          until nc -z postgres 5432; do
+            echo "Waiting for postgres..."
+            sleep 2
+          done
+          echo "Postgres is up!"
+          
+      containers:
+      - name: backend
+        # Use your actual backend image
+        # Build with: docker build -t your-registry/ecommerce-backend:v1 ./backend
+        image: your-registry/ecommerce-backend:v1
+        imagePullPolicy: Always
+        
+        # Resource requests and limits
+        # Adjust based on actual usage
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+            
+        ports:
+        - name: http
+          containerPort: 5000
+          protocol: TCP
+          
+        # Environment variables from ConfigMap
+        env:
+        - name: FLASK_ENV
+          valueFrom:
+            configMapKeyRef:
+              name: ecommerce-config
+              key: FLASK_ENV
+        - name: FLASK_APP
+          valueFrom:
+            configMapKeyRef:
+              name: ecommerce-config
+              key: FLASK_APP
+        - name: CORS_ORIGINS
+          valueFrom:
+            configMapKeyRef:
+              name: ecommerce-config
+              key: CORS_ORIGINS
+              
+        # Environment variables from Secrets
+        - name: SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: ecommerce-secrets
+              key: SECRET_KEY
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: postgres-credentials
+              key: POSTGRES_USER
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-credentials
+              key: POSTGRES_PASSWORD
+              
+        # Constructed environment variables
+        - name: POSTGRES_DB
+          valueFrom:
+            configMapKeyRef:
+              name: ecommerce-config
+              key: POSTGRES_DB
+        - name: DATABASE_URL
+          value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/$(POSTGRES_DB)"
+        - name: REDIS_URL
+          value: "redis://redis:6379/0"
+          # If using Redis password:
+          # value: "redis://:$(REDIS_PASSWORD)@redis:6379/0"
+          
+        # Liveness probe - is the container alive?
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+          
+        # Readiness probe - is the container ready for traffic?
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
+          
+        # Startup probe - for slow-starting containers
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 0
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 30  # 30 * 5 = 150 seconds max startup time
+          
+      # Restart policy
+      restartPolicy: Always
+      
+      # Pod termination grace period
+      terminationGracePeriodSeconds: 30
+
+---
+
+# =============================================================================
+# BACKEND HORIZONTAL POD AUTOSCALER (HPA)
+# =============================================================================
+# Automatically scales pods based on CPU/memory usage
+# Requires metrics-server to be installed in cluster
+# =============================================================================
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: backend-hpa
+  namespace: ecommerce
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: backend
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70  # Scale when CPU > 70%
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80  # Scale when memory > 80%
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300  # Wait 5 min before scaling down
+      policies:
+      - type: Percent
+        value: 50                      # Scale down max 50% at a time
+        periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0    # Scale up immediately
+      policies:
+      - type: Percent
+        value: 100                     # Double pods if needed
+        periodSeconds: 15
+      - type: Pods
+        value: 4                       # Or add max 4 pods
+        periodSeconds: 15
+      selectPolicy: Max                # Use the policy that scales more
+
+---
+
+# =============================================================================
+# BACKEND POD DISRUPTION BUDGET (PDB)
+# =============================================================================
+# Ensures high availability during voluntary disruptions
+# (node upgrades, cluster maintenance, etc.)
+# =============================================================================
+
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: backend-pdb
+  namespace: ecommerce
+spec:
+  minAvailable: 1  # Always keep at least 1 pod running
+  selector:
+    matchLabels:
+      app: backend

@@ -1,0 +1,318 @@
+# =============================================================================
+# MONITORING NAMESPACE AND COMMON RESOURCES
+# =============================================================================
+#
+# This file creates the foundation for the monitoring stack:
+# - Dedicated namespace for isolation
+# - ConfigMaps for configuration
+# - Persistent storage claims
+#
+# =============================================================================
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+  labels:
+    name: monitoring
+    purpose: observability
+
+---
+# =============================================================================
+# PROMETHEUS CONFIG MAP
+# =============================================================================
+# Prometheus configuration for scraping metrics from Kubernetes and apps
+# =============================================================================
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: monitoring
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+      external_labels:
+        cluster: 'ecommerce-cluster'
+        environment: 'production'
+    
+    # Alertmanager configuration
+    alerting:
+      alertmanagers:
+      - static_configs:
+        - targets:
+          - alertmanager:9093
+    
+    # Rule files for alerts
+    rule_files:
+      - /etc/prometheus/rules/*.yml
+    
+    # Scrape configurations
+    scrape_configs:
+      # Prometheus itself
+      - job_name: 'prometheus'
+        static_configs:
+          - targets: ['localhost:9090']
+      
+      # Kubernetes API server
+      - job_name: 'kubernetes-apiservers'
+        kubernetes_sd_configs:
+          - role: endpoints
+        scheme: https
+        tls_config:
+          ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_namespace, __meta_kubernetes_service_name, __meta_kubernetes_endpoint_port_name]
+            action: keep
+            regex: default;kubernetes;https
+      
+      # Kubernetes nodes
+      - job_name: 'kubernetes-nodes'
+        kubernetes_sd_configs:
+          - role: node
+        scheme: https
+        tls_config:
+          ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+        relabel_configs:
+          - action: labelmap
+            regex: __meta_kubernetes_node_label_(.+)
+      
+      # Kubernetes pods
+      - job_name: 'kubernetes-pods'
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+          - action: labelmap
+            regex: __meta_kubernetes_pod_label_(.+)
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            action: replace
+            target_label: kubernetes_pod_name
+      
+      # Backend service
+      - job_name: 'ecommerce-backend'
+        kubernetes_sd_configs:
+          - role: endpoints
+            namespaces:
+              names:
+                - ecommerce
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_name]
+            action: keep
+            regex: backend
+          - source_labels: [__meta_kubernetes_endpoint_port_name]
+            action: keep
+            regex: http
+      
+      # PostgreSQL (if exporter installed)
+      - job_name: 'postgres'
+        kubernetes_sd_configs:
+          - role: endpoints
+            namespaces:
+              names:
+                - ecommerce
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_name]
+            action: keep
+            regex: postgres-exporter
+      
+      # Redis (if exporter installed)
+      - job_name: 'redis'
+        kubernetes_sd_configs:
+          - role: endpoints
+            namespaces:
+              names:
+                - ecommerce
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_name]
+            action: keep
+            regex: redis-exporter
+
+---
+# =============================================================================
+# ALERT RULES CONFIG MAP
+# =============================================================================
+# Alert rules for critical application and infrastructure issues
+# =============================================================================
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-rules
+  namespace: monitoring
+data:
+  alerts.yml: |
+    groups:
+      - name: ecommerce_alerts
+        interval: 30s
+        rules:
+          # High error rate
+          - alert: HighErrorRate
+            expr: |
+              (
+                sum(rate(http_requests_total{status=~"5.."}[5m])) by (service)
+                /
+                sum(rate(http_requests_total[5m])) by (service)
+              ) > 0.05
+            for: 5m
+            labels:
+              severity: critical
+              component: backend
+            annotations:
+              summary: "High error rate detected"
+              description: "Service {{ $labels.service }} has error rate of {{ $value | humanizePercentage }}"
+          
+          # Pod down
+          - alert: PodDown
+            expr: up{job="ecommerce-backend"} == 0
+            for: 2m
+            labels:
+              severity: critical
+              component: backend
+            annotations:
+              summary: "Backend pod is down"
+              description: "Backend pod {{ $labels.instance }} has been down for more than 2 minutes"
+          
+          # High CPU usage
+          - alert: HighCPUUsage
+            expr: |
+              100 * (1 - avg by(pod)(rate(container_cpu_usage_seconds_total{namespace="ecommerce"}[5m])))
+              / on(pod) group_left() kube_pod_container_resource_limits{namespace="ecommerce", resource="cpu"} > 80
+            for: 10m
+            labels:
+              severity: warning
+              component: infrastructure
+            annotations:
+              summary: "High CPU usage"
+              description: "Pod {{ $labels.pod }} CPU usage is above 80%"
+          
+          # High memory usage
+          - alert: HighMemoryUsage
+            expr: |
+              (container_memory_usage_bytes{namespace="ecommerce"}
+              / container_spec_memory_limit_bytes{namespace="ecommerce"}) > 0.9
+            for: 5m
+            labels:
+              severity: warning
+              component: infrastructure
+            annotations:
+              summary: "High memory usage"  
+              description: "Pod {{ $labels.pod }} memory usage is above 90%"
+          
+          # Database connection issues
+          - alert: DatabaseConnectionFailed
+            expr: pg_up == 0
+            for: 1m
+            labels:
+              severity: critical
+              component: database
+            annotations:
+              summary: "Database connection failed"
+              description: "PostgreSQL is not reachable"
+          
+          # High response time
+          - alert: HighResponseTime
+            expr: |
+              histogram_quantile(0.95,
+                sum(rate(http_request_duration_seconds_bucket{namespace="ecommerce"}[5m])) by (le, service)
+              ) > 1
+            for: 5m
+            labels:
+              severity: warning
+              component: backend
+            annotations:
+              summary: "High response time"
+              description: "95th percentile response time for {{ $labels.service }} is above 1 second"
+          
+          # Disk space low
+          - alert: DiskSpaceLow
+            expr: |
+              (node_filesystem_avail_bytes{mountpoint="/"}
+              / node_filesystem_size_bytes{mountpoint="/"}) < 0.1
+            for: 5m
+            labels:
+              severity: warning
+              component: infrastructure
+            annotations:
+              summary: "Disk space low"
+              description: "Node {{ $labels.instance }} has less than 10% disk space available"
+          
+          # Pod restart loop
+          - alert: PodRestartLoop
+            expr: rate(kube_pod_container_status_restarts_total{namespace="ecommerce"}[15m]) > 0
+            for: 5m
+            labels:
+              severity: warning
+              component: kubernetes
+            annotations:
+              summary: "Pod restarting frequently"
+              description: "Pod {{ $labels.pod }} is restarting frequently"
+
+---
+# =============================================================================
+# PERSISTENT VOLUME CLAIM - Prometheus Data
+# =============================================================================
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: prometheus-pvc
+  namespace: monitoring
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+
+---
+# =============================================================================
+# PERSISTENT VOLUME CLAIM - Grafana Data
+# =============================================================================
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grafana-pvc
+  namespace: monitoring
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+
+---
+# =============================================================================
+# PERSISTENT VOLUME CLAIM - Loki Data
+# =============================================================================
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: loki-pvc
+  namespace: monitoring
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi

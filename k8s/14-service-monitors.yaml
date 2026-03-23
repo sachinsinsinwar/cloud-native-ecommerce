@@ -1,0 +1,365 @@
+# =============================================================================
+# SERVICE MONITORS FOR E-COMMERCE APPLICATION
+# =============================================================================
+#
+# ServiceMonitor is a custom resource from Prometheus Operator
+# For manual Prometheus setup, these need annotations on services/pods
+#
+# This file provides:
+# - Annotations for backend services to expose metrics
+# - Example metrics endpoints
+# - Instructions for adding Prometheus client libraries
+#
+# =============================================================================
+
+# =============================================================================
+# IMPORTANT: Add these annotations to your existing services
+# =============================================================================
+#
+# Backend service (04-backend-deployment.yaml):
+# Add to pod template metadata.annotations:
+#   prometheus.io/scrape: "true"
+#   prometheus.io/port: "5000"
+#   prometheus.io/path: "/metrics"
+#
+# Frontend service (05-frontend-deployment.yaml):
+#   prometheus.io/scrape: "true"
+#   prometheus.io/port: "80"
+#   prometheus.io/path: "/metrics"
+#
+# =============================================================================
+
+---
+# =============================================================================
+# BACKEND METRICS ENDPOINT (Add to your Flask app)
+# =============================================================================
+# 
+# Install prometheus_client in your backend/requirements.txt:
+#   prometheus_client==0.18.0
+#
+# Add to backend/app.py or create backend/metrics.py:
+#
+# from prometheus_client import Counter, Histogram, Gauge, generate_latest, REGISTRY
+# from flask import Response
+#
+# # Request counters
+# REQUEST_COUNT = Counter(
+#     'http_requests_total',
+#     'Total HTTP requests',
+#     ['method', 'endpoint', 'status']
+# )
+#
+# # Response time histogram
+# REQUEST_DURATION = Histogram(
+#     'http_request_duration_seconds',
+#     'HTTP request duration',
+#     ['method', 'endpoint']
+# )
+#
+# # Active users gauge
+# ACTIVE_USERS = Gauge('active_users_total', 'Number of active users')
+#
+# # Database connection pool
+# DB_CONNECTIONS = Gauge('database_connections_active', 'Active database connections')
+#
+# # Cache hits/misses
+# CACHE_HITS = Counter('cache_hits_total', 'Cache hits')
+# CACHE_MISSES = Counter('cache_misses_total', 'Cache misses')
+#
+# # Product operations
+# PRODUCT_VIEWS = Counter('product_views_total', 'Product page views', ['product_id'])
+# CART_ADDITIONS = Counter('cart_additions_total', 'Items added to cart')
+# ORDERS_CREATED = Counter('orders_created_total', 'Orders created')
+# ORDERS_FAILED = Counter('orders_failed_total', 'Failed orders', ['reason'])
+#
+# # Metrics endpoint
+# @app.route('/metrics')
+# def metrics():
+#     return Response(generate_latest(REGISTRY), mimetype='text/plain')
+#
+# # Middleware to track requests
+# @app.before_request
+# def before_request():
+#     request.start_time = time.time()
+#
+# @app.after_request
+# def after_request(response):
+#     if hasattr(request, 'start_time'):
+#         duration = time.time() - request.start_time
+#         REQUEST_DURATION.labels(
+#             method=request.method,
+#             endpoint=request.endpoint or  'unknown'
+#         ).observe(duration)
+#         REQUEST_COUNT.labels(
+#             method=request.method,
+#             endpoint=request.endpoint or 'unknown',
+#             status=response.status_code
+#         ).inc()
+#     return response
+#
+# =============================================================================
+
+---
+# =============================================================================
+# EXAMPLE: Custom Metrics for E-Commerce Business Logic
+# =============================================================================
+#
+# backend/routes/products.py:
+#
+# from metrics import PRODUCT_VIEWS, CACHE_HITS, CACHE_MISSES
+#
+# @products_bp.route('/<int:product_id>')
+# def get_product(product_id):
+#     PRODUCT_VIEWS.labels(product_id=product_id).inc()
+#     
+#     # Check cache
+#     cache_key = f'product:{product_id}'
+#     product = redis_client.get(cache_key)
+#     
+#     if product:
+#         CACHE_HITS.inc()
+#         return jsonify(json.loads(product))
+#     else:
+#         CACHE_MISSES.inc()
+#         product = db.session.query(Product).get(product_id)
+#         # ... rest of logic
+#
+# backend/routes/cart.py:
+#
+# from metrics import CART_ADDITIONS, ORDERS_CREATED, ORDERS_FAILED
+#
+# @cart_bp.route('/', methods=['POST'])
+# def add_to_cart():
+#     CART_ADDITIONS.inc()
+#     # ... rest of logic
+#
+# @cart_bp.route('/checkout', methods=['POST'])
+# def checkout():
+#     try:
+#         # ... checkout logic
+#         ORDERS_CREATED.inc()
+#         return jsonify({'success': True})
+#     except Exception as e:
+#         ORDERS_FAILED.labels(reason=str(type(e).__name__)).inc()
+#         raise
+#
+# =============================================================================
+
+---
+# =============================================================================
+# POSTGRES EXPORTER (Optional but recommended)
+# =============================================================================
+# Exports PostgreSQL metrics to Prometheus
+# =============================================================================
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-exporter-config
+  namespace: ecommerce
+data:
+  queries.yaml: |
+    pg_database:
+      query: "SELECT pg_database.datname, pg_database_size(pg_database.datname) as size FROM pg_database"
+      master: true
+      metrics:
+        - datname:
+            usage: "LABEL"
+            description: "Name of the database"
+        - size:
+            usage: "GAUGE"
+            description: "Database size in bytes"
+    
+    pg_stat_user_tables:
+      query: "SELECT schemaname, relname, seq_scan, idx_scan, n_tup_ins, n_tup_upd, n_tup_del FROM pg_stat_user_tables"
+      metrics:
+        - schemaname:
+            usage: "LABEL"
+            description: "Name of the schema"
+        - relname:
+            usage: "LABEL"
+            description: "Name of the table"
+        - seq_scan:
+            usage: "COUNTER"
+            description: "Number of sequential scans"
+        - idx_scan:
+            usage: "COUNTER"
+            description: "Number of index scans"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-exporter
+  namespace: ecommerce
+  labels:
+    app: postgres-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres-exporter
+  template:
+    metadata:
+      labels:
+        app: postgres-exporter
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9187"
+    spec:
+      containers:
+        - name: postgres-exporter
+          image: prometheuscommunity/postgres-exporter:v0.13.2
+          env:
+            - name: DATA_SOURCE_NAME
+              value: "postgresql://postgres:postgres@postgres:5432/ecommerce_db?sslmode=disable"
+            # Use secret in production:
+            # valueFrom:
+            #   secretKeyRef:
+            #     name: postgres-credentials
+            #     key: connection-string
+          ports:
+            - name: metrics
+              containerPort: 9187
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          volumeMounts:
+            - name: queries
+              mountPath: /etc/postgres-exporter
+      volumes:
+        - name: queries
+          configMap:
+            name: postgres-exporter-config
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-exporter
+  namespace: ecommerce
+  labels:
+    app: postgres-exporter
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9187"
+spec:
+  type: ClusterIP
+  ports:
+    - name: metrics
+      port: 9187
+      targetPort: 9187
+  selector:
+    app: postgres-exporter
+
+---
+# =============================================================================
+# REDIS EXPORTER (Optional but recommended)
+# =============================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-exporter
+  namespace: ecommerce
+  labels:
+    app: redis-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis-exporter
+  template:
+    metadata:
+      labels:
+        app: redis-exporter
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9121"
+    spec:
+      containers:
+        - name: redis-exporter
+          image: oliver006/redis_exporter:v1.53.0
+          env:
+            - name: REDIS_ADDR
+              value: "redis:6379"
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ecommerce-secrets
+                  key: redis-password
+          ports:
+            - name: metrics
+              containerPort: 9121
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-exporter
+  namespace: ecommerce
+  labels:
+    app: redis-exporter
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9121"
+spec:
+  type: ClusterIP
+  ports:
+    - name: metrics
+      port: 9121
+      targetPort: 9121
+  selector:
+    app: redis-exporter
+
+---
+# =============================================================================
+# KEY METRICS TO MONITOR FOR E-COMMERCE
+# =============================================================================
+#
+# Application Performance:
+# - Request rate (requests/sec)
+# - Response time (p50, p95, p99)
+# - Error rate (4xx, 5xx errors)
+# - Active users/sessions
+#
+# Business Metrics:
+# - Product views per minute
+# - Cart additions per minute
+# - Order completion rate
+# - Revenue per hour
+# - Failed transactions
+# - Abandoned carts
+#
+# Database:
+# - Connection pool usage
+# - Query duration
+# - Deadlocks
+# - Table size growth
+# - Index usage
+#
+# Cache (Redis):
+# - Hit rate
+# - Memory usage
+# - Evictions
+# - Connected clients
+#
+# Infrastructure:
+# - CPU usage per pod
+# - Memory usage per pod
+# - Disk I/O
+# - Network traffic
+# - Pod restarts
+#
+# =============================================================================

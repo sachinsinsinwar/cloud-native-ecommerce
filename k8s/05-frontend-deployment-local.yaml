@@ -1,0 +1,244 @@
+# =============================================================================
+# FRONTEND (REACT/NGINX) DEPLOYMENT AND SERVICE
+# =============================================================================
+# Why Deployment?
+# - Static files served by nginx (stateless)
+# - Easy scaling for high traffic
+# - Rolling updates for new frontend versions
+# =============================================================================
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: ecommerce
+  labels:
+    app: frontend
+spec:
+  # LoadBalancer - exposes frontend to internet
+  # In cloud providers (AWS/GCP/Azure), this creates an external load balancer
+  # For local testing, use NodePort or Ingress instead
+  type: NodePort
+  selector:
+    app: frontend
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+      protocol: TCP
+  # Session affinity (optional)
+  sessionAffinity: None
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: ecommerce
+  labels:
+    app: frontend
+spec:
+  # Horizontal scaling
+  replicas: 3
+  
+  # Deployment strategy
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+      
+  selector:
+    matchLabels:
+      app: frontend
+      
+  template:
+    metadata:
+      labels:
+        app: frontend
+        version: v1
+    spec:
+      # Security context
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101  # nginx user
+        fsGroup: 101
+        
+      containers:
+      - name: frontend
+        # Use your actual frontend image
+        # Build with: docker build -t your-registry/ecommerce-frontend:v1 ./frontend
+        image: ecommerce-frontend:v1
+        imagePullPolicy: Never
+        
+        # Resource limits
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "100m"
+          limits:
+            memory: "128Mi"
+            cpu: "200m"
+            
+        ports:
+        - name: http
+          containerPort: 80
+          protocol: TCP
+          
+        # Environment variable for API URL
+        # This is baked into the build, but can be overridden
+        env:
+        - name: VITE_API_URL
+          valueFrom:
+            configMapKeyRef:
+              name: ecommerce-config
+              key: VITE_API_URL
+              
+        # Liveness probe
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+          
+        # Readiness probe
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 2
+          
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 20
+
+---
+
+# =============================================================================
+# FRONTEND HORIZONTAL POD AUTOSCALER
+# =============================================================================
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: frontend-hpa
+  namespace: ecommerce
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: frontend
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+
+---
+
+# =============================================================================
+# FRONTEND POD DISRUPTION BUDGET
+# =============================================================================
+
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: frontend-pdb
+  namespace: ecommerce
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: frontend
+
+---
+
+# =============================================================================
+# INGRESS - More advanced traffic routing (alternative to LoadBalancer)
+# =============================================================================
+# Why Ingress?
+# - Single entry point for multiple services
+# - SSL/TLS termination
+# - Path-based and host-based routing
+# - Cost-effective (1 load balancer vs many)
+# 
+# Requires Ingress Controller (nginx-ingress, traefik, etc.)
+# =============================================================================
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ecommerce-ingress
+  namespace: ecommerce
+  annotations:
+    # Nginx ingress annotations
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # CORS configuration
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "https://yourdomain.com"
+    # Rate limiting
+    nginx.ingress.kubernetes.io/limit-rps: "100"
+    # Certificate manager for automatic SSL
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  ingressClassName: nginx
+  
+  # TLS configuration
+  tls:
+  - hosts:
+    - yourdomain.com
+    - www.yourdomain.com
+    - api.yourdomain.com
+    secretName: ecommerce-tls
+    
+  rules:
+  # Frontend routes
+  - host: yourdomain.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: frontend
+            port:
+              number: 80
+              
+  - host: www.yourdomain.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: frontend
+            port:
+              number: 80
+              
+  # Backend API routes
+  - host: api.yourdomain.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: backend
+            port:
+              number: 5000

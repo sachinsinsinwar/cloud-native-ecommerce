@@ -1,0 +1,197 @@
+# =============================================================================
+# LOCAL INGRESS CONFIGURATION (Minikube)
+# =============================================================================
+#
+# This is a simplified Ingress configuration for local development
+# Uses self-signed certificates instead of Let's Encrypt
+# Simplified annotations for easier testing
+#
+# Prerequisites:
+# 1. Enable Minikube Ingress addon:
+#    minikube addons enable ingress
+#
+# 2. (Optional) Install cert-manager for self-signed certs:
+#    kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
+#    kubectl apply -f 07-cert-manager.yaml
+#
+# 3. Add to /etc/hosts (Linux/Mac) or C:\Windows\System32\drivers\etc\hosts (Windows):
+#    <minikube-ip> ecommerce.local www.ecommerce.local api.ecommerce.local
+#
+# Get Minikube IP: minikube ip
+#
+# =============================================================================
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ecommerce-ingress-local
+  namespace: ecommerce
+  labels:
+    app: ecommerce
+    environment: local
+  annotations:
+    # Ingress class
+    kubernetes.io/ingress.class: "nginx"
+    
+    # Optional: Self-signed certificate (if cert-manager installed)
+    # cert-manager.io/cluster-issuer: "selfsigned-issuer"
+    
+    # Don't force SSL redirect for local testing
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    
+    # Basic CORS for local development
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "http://ecommerce.local,http://localhost:3000,http://localhost:3002"
+    nginx.ingress.kubernetes.io/cors-allow-credentials: "true"
+    
+    # Increase timeout for debugging
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+
+spec:
+  ingressClassName: nginx
+  
+  # Optional: TLS with self-signed cert
+  # tls:
+  # - hosts:
+  #   - ecommerce.local
+  #   - www.ecommerce.local
+  #   - api.ecommerce.local
+  #   secretName: ecommerce-local-tls
+  
+  rules:
+  # --------------------------------------------------------------------------
+  # FRONTEND - Main local domain
+  # --------------------------------------------------------------------------
+  - host: ecommerce.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: frontend
+            port:
+              number: 80
+  
+  # --------------------------------------------------------------------------
+  # FRONTEND - WWW subdomain
+  # --------------------------------------------------------------------------
+  - host: www.ecommerce.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: frontend
+            port:
+              number: 80
+  
+  # --------------------------------------------------------------------------
+  # BACKEND API - API subdomain
+  # --------------------------------------------------------------------------
+  - host: api.ecommerce.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: backend
+            port:
+              number: 5000
+
+---
+# =============================================================================
+# ALTERNATIVE: Simple path-based routing (no /etc/hosts editing needed)
+# =============================================================================
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ecommerce-ingress-simple
+  namespace: ecommerce
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    
+    # Rewrite /api/* to /*
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+spec:
+  ingressClassName: nginx
+  rules:
+  - http:
+      paths:
+      # API routes (must come first)
+      - path: /api(/|$)(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: backend
+            port:
+              number: 5000
+      
+      # Frontend (catch-all)
+      - path: /()(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: frontend
+            port:
+              number: 80
+
+---
+# =============================================================================
+# SETUP INSTRUCTIONS FOR LOCAL TESTING
+# =============================================================================
+#
+# 1. Enable Ingress addon:
+#    minikube addons enable ingress
+#
+# 2. Wait for Ingress controller to be ready:
+#    kubectl wait --namespace ingress-nginx \
+#      --for=condition=ready pod \
+#      --selector=app.kubernetes.io/component=controller \
+#      --timeout=120s
+#
+# 3. Apply this Ingress:
+#    kubectl apply -f 09-ingress-local.yaml
+#
+# 4A. Using host-based routing (ecommerce-ingress-local):
+#     Add to hosts file:
+#     
+#     Windows: C:\Windows\System32\drivers\etc\hosts
+#     Linux/Mac: /etc/hosts
+#     
+#     Add line (replace <MINIKUBE-IP> with output from: minikube ip):
+#     <MINIKUBE-IP> ecommerce.local www.ecommerce.local api.ecommerce.local
+#     
+#     Example:
+#     192.168.49.2 ecommerce.local www.ecommerce.local api.ecommerce.local
+#     
+#     Access:
+#     http://ecommerce.local - Frontend
+#     http://api.ecommerce.local - Backend API
+#
+# 4B. Using simple path-based routing (ecommerce-ingress-simple):
+#     No hosts file editing needed!
+#     
+#     Get URL:
+#     minikube service ingress-nginx-controller -n ingress-nginx --url
+#     
+#     Or use Minikube IP directly:
+#     http://<MINIKUBE-IP> - Frontend
+#     http://<MINIKUBE-IP>/api - Backend API
+#
+# 5. Verify Ingress:
+#    kubectl get ingress -n ecommerce
+#    kubectl describe ingress ecommerce-ingress-local -n ecommerce
+#
+# 6. Test:
+#    curl http://ecommerce.local
+#    curl http://api.ecommerce.local/health
+#
+# =============================================================================

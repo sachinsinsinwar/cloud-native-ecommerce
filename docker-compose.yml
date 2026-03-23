@@ -1,0 +1,385 @@
+# =============================================================================
+# DOCKER COMPOSE ORCHESTRATION - E-COMMERCE APPLICATION
+# =============================================================================
+# This file defines and orchestrates 4 services:
+# 1. PostgreSQL Database - Data persistence
+# 2. Redis Cache - In-memory caching
+# 3. Flask Backend - RESTful API
+# 4. React Frontend - User Interface
+# =============================================================================
+
+# =============================================================================
+# SERVICES (The containers that make up your application)
+# =============================================================================
+services:
+
+  # ---------------------------------------------------------------------------
+  # 1. POSTGRESQL DATABASE SERVICE
+  # Purpose: Primary database for users, products, orders
+  # ---------------------------------------------------------------------------
+  postgres:
+    # IMAGE EXPLANATION:
+    # - postgres:14-alpine → Official PostgreSQL 14 on Alpine Linux
+    # - Why PostgreSQL 14? Stable LTS version with modern features
+    # - Why Alpine? Smaller image size (~200MB vs ~350MB)
+    image: postgres:14-alpine
+    
+    # CONTAINER NAME:
+    # Friendly name for easier reference (docker ps, logs, etc.)
+    container_name: ecommerce-postgres
+    
+    # RESTART POLICY:
+    # - unless-stopped → Auto-restart on failure, but not if manually stopped
+    # - Options: no, always, on-failure, unless-stopped
+    restart: unless-stopped
+    
+    # ENVIRONMENT VARIABLES:
+    # Configure PostgreSQL at startup
+    environment:
+      # Database credentials (changeable via .env file)
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-ecommerce_db}
+      
+      # Database initialization settings
+      # -E UTF8 → Use UTF-8 encoding for international characters
+      POSTGRES_INITDB_ARGS: "-E UTF8 --locale=en_US.UTF-8"
+      
+      # Authentication method
+      # md5 → Require password authentication (more secure than 'trust')
+      POSTGRES_HOST_AUTH_METHOD: md5
+    
+    # PORT MAPPING:
+    # Format: "host_port:container_port"
+    # Maps port 5432 on your computer to port 5432 in the container
+    # ⚠️ PRODUCTION TIP: Remove this line in production (don't expose DB)
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    
+    # VOLUME MOUNTS:
+    # Persist data and initialize database
+    volumes:
+      # 1. DATA PERSISTENCE
+      # Named volume 'postgres_data' → /var/lib/postgresql/data
+      # Data survives container restarts/removals
+      - postgres_data:/var/lib/postgresql/data
+      
+      # 2. SCHEMA INITIALIZATION
+      # Mount init.sql → Runs ONCE on first startup
+      # :ro = read-only mount (security best practice)
+      - ./database/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      
+      # 3. SAMPLE DATA
+      # Mount seed.sql → Runs AFTER init.sql
+      # Numbers (01-, 02-) control execution order
+      - ./database/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
+    
+    # HEALTH CHECK:
+    # Docker monitors if PostgreSQL is ready to accept connections
+    healthcheck:
+      # Command: Check if PostgreSQL is ready
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-ecommerce_db}"]
+      interval: 10s    # Check every 10 seconds
+      timeout: 5s      # Wait up to 5 seconds for response
+      retries: 5       # Try 5 times before marking unhealthy
+      start_period: 10s # Grace period for startup
+    
+    # RESOURCE LIMITS:
+    # Prevents one container from consuming all system resources
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'      # Maximum 1 CPU core
+          memory: 512M     # Maximum 512 MB RAM
+        reservations:
+          cpus: '0.5'      # Reserved 0.5 CPU cores
+          memory: 256M     # Reserved 256 MB RAM
+    
+    # NETWORK:
+    # Connect to custom network for inter-service communication
+    networks:
+      - ecommerce-network
+
+  # ---------------------------------------------------------------------------
+  # 2. REDIS CACHE SERVICE
+  # Purpose: In-memory caching for product data and sessions
+  # ---------------------------------------------------------------------------
+  redis:
+    # IMAGE EXPLANATION:
+    # - redis:7-alpine → Latest stable Redis on Alpine Linux
+    # - Why Redis 7? Performance improvements and better security
+    # - Why Alpine? Minimal size (~30MB)
+    image: redis:7-alpine
+    
+    container_name: ecommerce-redis
+    restart: unless-stopped
+    
+    # REDIS CONFIGURATION:
+    # Command-line arguments to configure Redis behavior
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - everysec
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - allkeys-lru
+    
+    # COMMAND EXPLANATION:
+    # - appendonly yes → Save data to disk (survives restarts)
+    # - appendfsync everysec → Balance between performance and durability
+    # - maxmemory 256mb → Prevent Redis from consuming too much RAM
+    # - allkeys-lru → When memory full, remove least recently used keys
+    # - requirepass → Optional password (leave empty for no password)
+    
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    
+    # VOLUME:
+    # Persist Redis data (AOF file)
+    volumes:
+      - redis_data:/data
+    
+    # HEALTH CHECK:
+    # Verify Redis is responding
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    
+    networks:
+      - ecommerce-network
+
+  # ---------------------------------------------------------------------------
+  # 3. FLASK BACKEND SERVICE (Python API)
+  # Purpose: RESTful API for authentication, products, cart
+  # ---------------------------------------------------------------------------
+  backend:
+    # BUILD CONFIGURATION:
+    # Instead of pulling an image, build from local Dockerfile
+    build:
+      context: ./backend        # Directory containing Dockerfile
+      dockerfile: Dockerfile    # Dockerfile name
+      # target: production      # Uncomment for multi-stage build target
+    
+    container_name: ecommerce-backend
+    restart: unless-stopped
+    
+    # ENVIRONMENT VARIABLES:
+    # Flask configuration and database connections
+    environment:
+      # Flask settings
+      FLASK_ENV: ${FLASK_ENV:-production}
+      FLASK_APP: app.py
+      
+      # DATABASE CONNECTION STRING:
+      # Format: postgresql://user:password@host:port/database
+      # Note: host is 'postgres' (the service name, not localhost)
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-ecommerce_db}
+      
+      # REDIS CONNECTION STRING:
+      # Format: redis://:password@host:port/database_number
+      # Note: host is 'redis' (the service name)
+      REDIS_URL: redis://:${REDIS_PASSWORD:-}@redis:6379/0
+      
+      # Security
+      SECRET_KEY: ${SECRET_KEY:-change-this-to-random-secret-key-in-production}
+      
+      # CORS Configuration
+      # Allow requests from these origins (comma-separated)
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:80}
+      
+      # Python settings
+      PYTHONUNBUFFERED: 1           # Don't buffer output (see logs immediately)
+      PYTHONDONTWRITEBYTECODE: 1    # Don't create .pyc files
+    
+    ports:
+      - "${BACKEND_PORT:-5000}:5000"
+    
+    # DEPENDS_ON:
+    # Wait for PostgreSQL and Redis to start (not necessarily healthy)
+    depends_on:
+      postgres:
+        condition: service_started
+      redis:
+        condition: service_started
+    
+    # HEALTH CHECK:
+    # Monitor Flask application health
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:5000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s   # Give Flask time to start up
+    
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    
+    networks:
+      - ecommerce-network
+
+  # ---------------------------------------------------------------------------
+  # 4. REACT FRONTEND SERVICE (User Interface)
+  # Purpose: Serve the React application to users
+  # ---------------------------------------------------------------------------
+  frontend:
+    # BUILD CONFIGURATION:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      
+      # TARGET SELECTION:
+      # - development → Vite dev server with hot-reload (port 3000)
+      # - production → Nginx serving optimized build (port 80)
+      target: ${FRONTEND_BUILD_TARGET:-production}
+      
+      # BUILD ARGUMENTS:
+      # Injected at BUILD time (not runtime)
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:5000}
+    
+    container_name: ecommerce-frontend
+    restart: unless-stopped
+    
+    # ENVIRONMENT VARIABLES:
+    # For development target only (production uses build args)
+    environment:
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:5000}
+    
+    # PORT MAPPING:
+    # Development: Maps to port 3000 (Vite)
+    # Production: Maps to port 80 (Nginx)
+    ports:
+      - "${FRONTEND_PORT:-3000}:${FRONTEND_INTERNAL_PORT:-80}"
+    
+    # DEPENDS_ON:
+    # Wait for backend to start
+    depends_on:
+      backend:
+        condition: service_started
+    
+    # HEALTH CHECK:
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:${FRONTEND_INTERNAL_PORT:-80}/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    
+    networks:
+      - ecommerce-network
+
+# =============================================================================
+# NETWORKS (How containers communicate)
+# =============================================================================
+networks:
+  ecommerce-network:
+    # DRIVER:
+    # bridge → Default network type for Docker Compose
+    # Containers can communicate using service names as hostnames
+    driver: bridge
+    
+    # IPAM (IP Address Management):
+    # Assign custom subnet for predictable IP addresses
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.25.0.0/16  # Custom subnet range
+
+# WHY CUSTOM NETWORK?
+# - Service discovery: Containers can use service names (postgres, redis, etc.)
+# - Isolation: Separate from other Docker networks
+# - Security: Only services in this network can communicate
+
+# =============================================================================
+# VOLUMES (Persistent data storage)
+# =============================================================================
+volumes:
+  # POSTGRES DATA VOLUME:
+  # Stores all PostgreSQL data (survives container removal)
+  postgres_data:
+    driver: local  # Store on local disk
+    # Alternative for production:
+    # driver_opts:
+    #   type: nfs
+    #   o: addr=nfs-server,rw
+    #   device: ":/path/to/data"
+  
+  # REDIS DATA VOLUME:
+  # Stores Redis AOF (Append Only File) for persistence
+  redis_data:
+    driver: local
+
+# WHY NAMED VOLUMES?
+# - Data persists even when containers are removed
+# - Docker manages the storage location
+# - Easy to backup/restore (docker volume commands)
+# - Better performance than bind mounts
+
+# =============================================================================
+# USAGE EXAMPLES
+# =============================================================================
+# 
+# START ALL SERVICES:
+#   docker-compose up --build
+#
+# START IN BACKGROUND (DETACHED):
+#   docker-compose up -d --build
+#
+# STOP ALL SERVICES:
+#   docker-compose down
+#
+# STOP AND REMOVE VOLUMES (⚠️ DELETES DATA):
+#   docker-compose down -v
+#
+# VIEW LOGS:
+#   docker-compose logs -f              # All services
+#   docker-compose logs -f backend      # Specific service
+#
+# CHECK SERVICE STATUS:
+#   docker-compose ps
+#
+# RESTART SINGLE SERVICE:
+#   docker-compose restart backend
+#
+# EXECUTE COMMANDS IN CONTAINER:
+#   docker-compose exec backend /bin/sh
+#   docker-compose exec postgres psql -U postgres -d ecommerce_db
+#   docker-compose exec redis redis-cli
+#
+# VIEW RESOURCE USAGE:
+#   docker stats
+#
+# SCALE SERVICES (multiple instances):
+#   docker-compose up -d --scale backend=3
+#
+# =============================================================================
