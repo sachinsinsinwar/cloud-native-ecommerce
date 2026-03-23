@@ -84,9 +84,8 @@ spec:
           
       containers:
       - name: backend
-        # Use your actual backend image
-        # Build with: docker build -t your-registry/ecommerce-backend:v1 ./backend
-        image: your-registry/ecommerce-backend:v1
+        # Pulls image from Docker Hub
+        image: sachinsingh20/ecommerce-backend:latest
         imagePullPolicy: Always
         
         # Resource requests and limits

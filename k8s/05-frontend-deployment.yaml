@@ -67,9 +67,8 @@ spec:
         
       containers:
       - name: frontend
-        # Use your actual frontend image
-        # Build with: docker build -t your-registry/ecommerce-frontend:v1 ./frontend
-        image: your-registry/ecommerce-frontend:v1
+        # Pulls image from Docker Hub
+        image: sachinsingh20/ecommerce-frontend:latest
         imagePullPolicy: Always
         
         # Resource limits
