@@ -42,7 +42,7 @@ jobs:
           context: ./frontend
           push: true
           build-args: |
-             VITE_API_URL=https://api.ecommerce.sachininfo.xyz
+             VITE_API_URL=https://ecommerceapi.sachininfo.xyz
           tags: ${{ secrets.DOCKER_USERNAME }}/ecommerce-frontend:latest
           cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/ecommerce-frontend:buildcache
           cache-to: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/ecommerce-frontend:buildcache,mode=max
