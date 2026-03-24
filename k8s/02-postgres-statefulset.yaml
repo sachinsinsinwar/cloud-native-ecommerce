@@ -65,7 +65,7 @@ spec:
         resources:
           requests:
             memory: "256Mi"
-            cpu: "250m"
+            cpu: "100m"
           limits:
             memory: "512Mi"
             cpu: "500m"
@@ -140,7 +140,7 @@ spec:
       accessModes: [ "ReadWriteOnce" ]
       # Storage class - adjust based on cloud provider
       # Examples: gp2 (AWS), standard (GKE), managed-premium (Azure)
-      storageClassName: standard
+      storageClassName: local-path
       resources:
         requests:
           storage: 10Gi
