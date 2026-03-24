@@ -10,45 +10,45 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-body-size: "10m"
     # CORS
     nginx.ingress.kubernetes.io/enable-cors: "true"
-    nginx.ingress.kubernetes.io/cors-allow-origin: "https://sachininfo.xyz, https://www.sachininfo.xyz"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "https://ecommerce.sachininfo.xyz, https://www.ecommerce.sachininfo.xyz"
     nginx.ingress.kubernetes.io/cors-allow-methods: "GET, PUT, POST, DELETE, PATCH, OPTIONS"
     nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization"
 spec:
   ingressClassName: nginx
   tls:
   - hosts:
-    - sachininfo.xyz
-    - www.sachininfo.xyz
-    - api.sachininfo.xyz
+    - ecommerce.sachininfo.xyz
+    - www.ecommerce.sachininfo.xyz
+    - api.ecommerce.sachininfo.xyz
     secretName: ecommerce-tls-prod
   rules:
-  - host: sachininfo.xyz
+  - host: ecommerce.sachininfo.xyz
     http:
       paths:
       - path: /
         pathType: Prefix
         backend:
           service:
-            name: ecommerce-frontend
+            name: frontend
             port:
               number: 80
-  - host: www.sachininfo.xyz
+  - host: www.ecommerce.sachininfo.xyz
     http:
       paths:
       - path: /
         pathType: Prefix
         backend:
           service:
-            name: ecommerce-frontend
+            name: frontend
             port:
               number: 80
-  - host: api.sachininfo.xyz
+  - host: api.ecommerce.sachininfo.xyz
     http:
       paths:
       - path: /
         pathType: Prefix
         backend:
           service:
-            name: ecommerce-backend
+            name: backend
             port:
               number: 5000
