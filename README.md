@@ -29,7 +29,23 @@ A full-stack e-commerce application built with Flask (Python) backend, React fro
 - Product data caching with TTL
 - Cache invalidation on updates
 
-## 📋 Prerequisites
+## 🌐 Live Cloud Deployment (AWS & Kubernetes)
+
+This application is fully deployed and accessible live through a **DevSecOps** pipeline:
+
+- **Frontend**: [https://ecommerce.sachininfo.xyz](https://ecommerce.sachininfo.xyz)
+- **Backend API**: `https://ecommerceapi.sachininfo.xyz/health`
+- **Observability (Grafana)**: `https://grafana.sachininfo.xyz`
+
+### 🏗️ Cloud Architecture
+- **CI/CD Pipeline**: GitHub Actions automatically builds and pushes Docker images to Docker Hub on every commit.
+- **Kubernetes (K3s)**: Hosted on an AWS LightSail instance.
+- **DNS & Security**: Cloudflare proxy routing with **Let's Encrypt** automated SSL certificates (managed by `cert-manager`).
+- **Observability**: Prometheus and Loki collect metrics and logs, visualized beautifully via Grafana.
+
+---
+
+## 📋 Local Prerequisites
 
 - **Docker** and **Docker Compose** (recommended)
 - OR:
