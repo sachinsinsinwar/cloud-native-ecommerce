@@ -1,333 +1,71 @@
-# E-Commerce Application
+# cloud-native-ecommerce
 
-A full-stack e-commerce application built with Flask (Python) backend, React frontend, PostgreSQL database, and Redis caching. Perfect for DevOps portfolio projects with complete Docker containerization.
+A full-stack e-commerce platform deployed on AWS using Kubernetes, with automated CI/CD, SSL, and a full observability stack.
 
-## 🚀 Features
-
-### Backend (Flask/Python)
-- **User Authentication**: JWT-based signup/login with password hashing
-- **Product Management**: RESTful API for product listing, details, and creation
-- **Shopping Cart**: Add/update/remove items with stock validation
-- **Order Processing**: Checkout functionality with inventory management
-- **Redis Caching**: Product data caching for improved performance
-- **Health Checks**: Monitoring endpoints for database and Redis connectivity
-
-### Frontend (React)
-- **User Interface**: Modern, responsive design with React 18
-- **Authentication Pages**: Login and signup with form validation
-- **Product Catalog**: Grid view with search, filtering, and pagination
-- **Shopping Cart**: Full cart management with quantity controls
-- **Protected Routes**: Authentication-based access control
-
-### Database (PostgreSQL)
-- Users, Products, Carts, Orders, and Order Items tables
-- Proper relationships and constraints
-- Sample seed data included
-
-### Caching (Redis)
-- Session management
-- Product data caching with TTL
-- Cache invalidation on updates
-
-## 🌐 Live Cloud Deployment (AWS & Kubernetes)
-
-This application is fully deployed and accessible live through a **DevSecOps** pipeline:
-
-- **Frontend**: [https://ecommerce.sachininfo.xyz](https://ecommerce.sachininfo.xyz)
-- **Backend API**: `https://ecommerceapi.sachininfo.xyz/health`
-- **Observability (Grafana)**: `https://grafana.sachininfo.xyz`
-
-### 🏗️ Cloud Architecture
-- **CI/CD Pipeline**: GitHub Actions automatically builds and pushes Docker images to Docker Hub on every commit.
-- **Kubernetes (K3s)**: Hosted on an AWS LightSail instance.
-- **DNS & Security**: Cloudflare proxy routing with **Let's Encrypt** automated SSL certificates (managed by `cert-manager`).
-- **Observability**: Prometheus and Loki collect metrics and logs, visualized beautifully via Grafana.
+The web application (React frontend + Flask backend) was built with AI assistance. The focus of this project is the cloud infrastructure, containerization, and DevOps pipeline.
 
 ---
 
-## 📋 Local Prerequisites
+## Live URLs
 
-- **Docker** and **Docker Compose** (recommended)
-- OR:
-  - Python 3.9+
-  - Node.js 18+
-  - PostgreSQL 14+
-  - Redis 7+
+- Frontend: https://ecommerce.sachininfo.xyz
+- Backend API: https://ecommerceapi.sachininfo.xyz/health
+- Grafana: https://grafana.sachininfo.xyz
 
-## 🐳 Quick Start with Docker
+---
 
-1. **Clone the repository**
-   ```bash
-   cd "DevOps with AI Antigravity"
-   ```
+## Stack
 
-2. **Start all services**
-   ```bash
-   docker-compose up --build
-   ```
+- Frontend: React 18 + Vite, served via Nginx
+- Backend: Flask (Python), JWT auth, REST API
+- Database: PostgreSQL with persistent volume claims
+- Cache: Redis for sessions and product caching
+- Containers: Docker + Docker Compose
+- Orchestration: K3s (Kubernetes) on AWS Lightsail
+- Ingress: Nginx Ingress Controller
+- SSL: Cert-Manager + Let's Encrypt (automated HTTP-01 challenge)
+- DNS and Security: Cloudflare WAF, HSTS, TLS 1.2+, Bot Fight Mode
+- CI/CD: GitHub Actions -> Docker Hub -> K3s
+- Monitoring: Prometheus, Loki, Promtail, Grafana
 
-3. **Access the application**
-   - Frontend: http://localhost:3000
-   - Backend API: http://localhost:5000
-   - API Health Check: http://localhost:5000/health
+---
 
-4. **Stop services**
-   ```bash
-   docker-compose down
-   ```
+## How the pipeline works
 
-## 💻 Manual Setup (Without Docker)
+Every git push to the staging branch triggers GitHub Actions, which builds Docker images, pushes them to Docker Hub, and deploys to the K3s cluster. Cert-Manager automatically provisions and renews SSL certificates from Let's Encrypt. Cloudflare proxies all traffic with WAF and DDoS protection in front.
 
-### Backend Setup
+---
 
-1. **Navigate to backend directory**
-   ```bash
-   cd backend
-   ```
-
-2. **Create virtual environment**
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
-
-3. **Install dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. **Set up environment variables**
-   ```bash
-   cp ../.env.example .env
-   # Edit .env with your database and Redis credentials
-   ```
-
-5. **Initialize database**
-   ```bash
-   # Make sure PostgreSQL is running
-   psql -U postgres -f ../database/init.sql
-   psql -U postgres -d ecommerce_db -f ../database/seed.sql
-   ```
-
-6. **Run the backend**
-   ```bash
-   python app.py
-   # Backend will run on http://localhost:5000
-   ```
-
-### Frontend Setup
-
-1. **Navigate to frontend directory**
-   ```bash
-   cd frontend
-   ```
-
-2. **Install dependencies**
-   ```bash
-   npm install
-   ```
-
-3. **Set up environment variables**
-   ```bash
-   # Create .env file
-   echo "VITE_API_URL=http://localhost:5000" > .env
-   ```
-
-4. **Run the frontend**
-   ```bash
-   npm run dev
-   # Frontend will run on http://localhost:3000
-   ```
-
-## 📚 API Documentation
-
-### Authentication Endpoints
-
-- **POST** `/api/auth/signup` - Register new user
-- **POST** `/api/auth/login` - Login user
-- **POST** `/api/auth/logout` - Logout user
-- **GET** `/api/auth/me` - Get current user info
-
-### Product Endpoints
-
-- **GET** `/api/products` - List all products (with pagination, search, filter)
-- **GET** `/api/products/:id` - Get product details
-- **POST** `/api/products` - Create new product
-- **GET** `/api/products/categories` - Get all categories
-
-### Cart Endpoints
-
-- **GET** `/api/cart` - Get user's cart
-- **POST** `/api/cart/items` - Add item to cart
-- **PUT** `/api/cart/items/:id` - Update cart item quantity
-- **DELETE** `/api/cart/items/:id` - Remove item from cart
-- **POST** `/api/cart/checkout` - Create order from cart
-- **POST** `/api/cart/clear` - Clear cart
-
-### Example API Calls
-
-**Signup:**
+## Local setup
 ```bash
-curl -X POST http://localhost:5000/api/auth/signup \
-  -H "Content-Type: application/json" \
-  -d '{"username":"john","email":"john@example.com","password":"password123"}'
+git clone https://github.com/sachinsinsinwar/cloud-native-ecommerce
+cd cloud-native-ecommerce
+docker-compose up --build
 ```
 
-**Login:**
-```bash
-curl -X POST http://localhost:5000/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"username":"john","password":"password123"}'
+Frontend runs on http://localhost:3000
+Backend runs on http://localhost:5000
+
+---
+
+## Project structure
+```
+.github/workflows/    CI/CD pipeline
+backend/              Flask API (routes, models, JWT, Redis cache)
+frontend/             React app (components, auth context, API client)
+database/             PostgreSQL init and seed scripts
+k8s/                  Kubernetes manifests
+docker-compose.yml    Local development
 ```
 
-**Get Products:**
-```bash
-curl http://localhost:5000/api/products
-```
+---
 
-## 🗂️ Project Structure
+## What I built vs what was AI-assisted
 
-```
-.
-├── backend/                    # Flask backend
-│   ├── app.py                 # Main application factory
-│   ├── config.py              # Configuration management
-│   ├── models.py              # Database models
-│   ├── requirements.txt       # Python dependencies
-│   ├── routes/                # API routes
-│   │   ├── auth.py           # Authentication endpoints
-│   │   ├── products.py       # Product endpoints
-│   │   └── cart.py           # Cart endpoints
-│   └── utils/                 # Utilities
-│       ├── auth_middleware.py # JWT authentication
-│       └── cache.py           # Redis caching
-│
-├── frontend/                   # React frontend
-│   ├── src/
-│   │   ├── App.jsx            # Main app component
-│   │   ├── components/        # React components
-│   │   │   ├── Auth/         # Login/Signup
-│   │   │   ├── Products/     # Product list/card
-│   │   │   └── Cart/         # Shopping cart
-│   │   ├── context/          # React context
-│   │   │   └── AuthContext.jsx
-│   │   └── services/         # API service
-│   │       └── api.js
-│   ├── package.json
-│   └── vite.config.js
-│
-├── database/                   # Database scripts
-│   ├── init.sql              # Schema creation
-│   └── seed.sql              # Sample data
-│
-├── docker-compose.yml         # Docker orchestration
-└── README.md                  # This file
-```
+Infrastructure, Kubernetes manifests, CI/CD pipeline, Cloudflare configuration, SSL setup, Nginx Ingress, and the observability stack (Prometheus, Loki, Grafana) — all done manually.
 
-## 🔧 Configuration
+The React frontend and Flask backend application code was built with AI assistance (vibe coding). This let me focus on the DevOps and cloud infrastructure side, which is the core of this project.
 
-### Environment Variables
+---
 
-Create a `.env` file in the root directory (copy from `.env.example`):
-
-```env
-FLASK_ENV=development
-SECRET_KEY=your-secret-key
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/ecommerce_db
-REDIS_URL=redis://localhost:6379/0
-CORS_ORIGINS=http://localhost:3000
-VITE_API_URL=http://localhost:5000
-```
-
-### Docker Configuration
-
-The `docker-compose.yml` file includes:
-- PostgreSQL with automatic schema initialization
-- Redis for caching
-- Flask backend with hot-reload
-- React frontend with Vite dev server
-
-## 🧪 Testing
-
-### Backend Health Check
-```bash
-curl http://localhost:5000/health
-```
-
-### Test User Flow
-1. Create an account at `/signup`
-2. Login at `/login`
-3. Browse products at `/products`
-4. Add items to cart
-5. View cart at `/cart`
-6. Checkout to create an order
-
-## 🛠️ Development
-
-### Adding New Products
-
-Use the API or directly insert into the database:
-
-```bash
-curl -X POST http://localhost:5000/api/products \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "New Product",
-    "description": "Product description",
-    "price": 99.99,
-    "stock": 50,
-    "category": "Electronics",
-    "image_url": "https://example.com/image.jpg"
-  }'
-```
-
-### Redis Cache Management
-
-Check cached data:
-```bash
-docker exec -it ecommerce-redis redis-cli
-KEYS *
-GET product:1
-```
-
-Clear cache:
-```bash
-docker exec -it ecommerce-redis redis-cli FLUSHDB
-```
-
-## 🚀 Production Deployment
-
-For production:
-
-1. **Update environment variables**
-   - Set strong `SECRET_KEY`
-   - Configure production database URL
-   - Update `CORS_ORIGINS` to your domain
-
-2. **Build frontend for production**
-   ```bash
-   cd frontend
-   npm run build
-   ```
-
-3. **Use production server for backend**
-   ```bash
-   gunicorn -w 4 -b 0.0.0.0:5000 app:app
-   ```
-
-4. **Use Docker production builds**
-   ```bash
-   docker-compose -f docker-compose.prod.yml up -d
-   ```
-
-## 📝 License
-
-This project is created for educational and portfolio purposes.
-
-## 👤 Author
-
-Built as a DevOps portfolio project demonstrating full-stack development with containerization.
-
-## 🤝 Contributing
-
-This is a portfolio project, but suggestions and improvements are welcome!
+Built by Sachin Singh
