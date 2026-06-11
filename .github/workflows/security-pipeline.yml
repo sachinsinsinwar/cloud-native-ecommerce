@@ -1,0 +1,147 @@
+name: SecureOps Security Pipeline
+
+
+
+on:
+
+  push:
+
+    branches: [main, staging]
+
+  pull_request:
+
+    branches: [main, staging]
+
+  workflow_dispatch:        # lets you trigger it manually from the Actions tab
+
+
+
+permissions:
+
+  contents: read
+
+  security-events: write    # allows uploading findings to the repo Security tab
+
+
+
+jobs:
+
+  # ---------------------------------------------------------------------
+
+  # Gate 1 — Secret scanning. Catches committed credentials first.
+
+  # ---------------------------------------------------------------------
+
+  secret-scan:
+
+    name: Secret scan (gitleaks)
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - uses: actions/checkout@v4
+
+        with:
+
+          fetch-depth: 0    # full history — secrets often hide in OLD commits
+
+      - name: Run gitleaks
+
+        uses: gitleaks/gitleaks-action@v2
+
+        env:
+
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+
+
+  # ---------------------------------------------------------------------
+
+  # Gate 2 — SAST. Static analysis of your own source code.
+
+  # ---------------------------------------------------------------------
+
+  sast:
+
+    name: SAST (Semgrep)
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+
+        with:
+
+          python-version: '3.12'
+
+      - name: Install Semgrep
+
+        run: python -m pip install --upgrade semgrep
+
+      - name: Run Semgrep
+
+        run: |
+
+          semgrep scan \
+
+            --config p/python \
+
+            --config p/javascript \
+
+            --config p/secrets \
+
+            --config p/owasp-top-ten \
+
+            --sarif --output semgrep.sarif \
+
+            --error          # non-zero exit on findings = fails the gate
+
+      - name: Upload findings to Security tab
+
+        if: always()         # upload even when the gate fails
+
+        uses: github/codeql-action/upload-sarif@v3
+
+        with:
+
+          sarif_file: semgrep.sarif
+
+
+
+  # ---------------------------------------------------------------------
+
+  # Gate 3 — SCA. Scans your dependencies for known CVEs.
+
+  # ---------------------------------------------------------------------
+
+  sca:
+
+    name: SCA (Trivy filesystem)
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - uses: actions/checkout@v4
+
+      - name: Trivy dependency scan
+
+        uses: aquasecurity/trivy-action@master
+
+        with:
+
+          scan-type: fs
+
+          scan-ref: .
+
+          scanners: vuln
+
+          severity: HIGH,CRITICAL
+
+          exit-code: '1'     # fail the gate on HIGH/CRITICAL vulns
+
+          format: table
