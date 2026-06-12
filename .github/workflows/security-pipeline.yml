@@ -91,7 +91,7 @@ jobs:
 
 
 
-  # Gate 3 - SCA
+  # Gate 3 - SCA (file scan)
 
   sca:
 
@@ -194,4 +194,76 @@ jobs:
             ghcr.io/sachinsinsinwar/ecommerce-frontend:${{ github.sha }}
 
             ghcr.io/sachinsinsinwar/ecommerce-frontend:latest
+
+
+
+  # Image scan - scans the whole built container, base OS included
+
+  image-scan:
+
+    name: Image scan (Trivy)
+
+    runs-on: ubuntu-latest
+
+    needs: build
+
+    permissions:
+
+      contents: read
+
+      packages: read
+
+    steps:
+
+      - name: Log in to GitHub Container Registry
+
+        uses: docker/login-action@v3
+
+        with:
+
+          registry: ghcr.io
+
+          username: ${{ github.actor }}
+
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Scan backend image
+
+        uses: aquasecurity/trivy-action@master
+
+        with:
+
+          scan-type: image
+
+          image-ref: ghcr.io/sachinsinsinwar/ecommerce-backend:${{ github.sha }}
+
+          scanners: vuln
+
+          severity: HIGH,CRITICAL
+
+          ignore-unfixed: true
+
+          exit-code: '1'
+
+          format: table
+
+      - name: Scan frontend image
+
+        uses: aquasecurity/trivy-action@master
+
+        with:
+
+          scan-type: image
+
+          image-ref: ghcr.io/sachinsinsinwar/ecommerce-frontend:${{ github.sha }}
+
+          scanners: vuln
+
+          severity: HIGH,CRITICAL
+
+          ignore-unfixed: true
+
+          exit-code: '1'
+
+          format: table
 
