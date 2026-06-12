@@ -73,7 +73,8 @@ RUN npm run build
 # Stage 3: Production Stage (nginx to serve static files)
 # Purpose: Lightweight production server for static React app
 # -----------------------------------------------------------------------------
-FROM nginx:1.25-alpine AS production
+FROM nginx:stable-alpine AS production
+RUN apk upgrade --no-cache
 
 # Base Image Reasoning:
 # - nginx:alpine: Industry-standard web server, highly efficient
