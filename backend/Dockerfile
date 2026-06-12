@@ -42,7 +42,7 @@ COPY requirements.txt .
 # Install Python dependencies
 # --no-cache-dir: Don't cache pip packages (saves space)
 # --upgrade: Ensure latest compatible versions
-RUN pip install --no-cache-dir --upgrade pip && \
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
     pip install --no-cache-dir -r requirements.txt
 
 # -----------------------------------------------------------------------------
@@ -64,6 +64,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy Python packages from builder stage
+RUN apt-get update && apt-get install -y --only-upgrade openssl && rm -rf /var/lib/apt/lists/*
+
 COPY --from=builder /usr/local/lib/python3.9/site-packages /usr/local/lib/python3.9/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
