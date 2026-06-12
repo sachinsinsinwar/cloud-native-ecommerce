@@ -158,4 +158,11 @@ if __name__ == '__main__':
     """
     # Use port 5001 to avoid conflicts with existing services
     port = int(os.getenv('FLASK_PORT', 5001))
-    app.run(host='0.0.0.0', port=port, debug=True)
+
+    host = os.getenv('FLASK_HOST', '0.0.0.0')
+
+    # debug is OFF by default; turn it on only on your own machine with FLASK_DEBUG=true
+
+    debug = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
+
+    app.run(host=host, port=port, debug=debug)
