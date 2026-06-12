@@ -269,6 +269,7 @@ jobs:
 
 
 
+  # Colourful summary on the run page
 
   summary:
 
@@ -286,11 +287,11 @@ jobs:
 
         run: |
 
-          icon() { case "$1" in success) echo "âœ…";; failure) echo "âŒ";; skipped) echo "â­ï¸";; *) echo "â¬œ";; esac; }
+          icon() { case "$1" in success) echo "white_check_mark";; failure) echo "x";; skipped) echo "next_track_button";; *) echo "white_large_square";; esac; }
 
           {
 
-            echo "# í ½í»¡ï¸ SecureOps Security Pipeline"
+            echo "# SecureOps Security Pipeline"
 
             echo ""
 
@@ -298,35 +299,35 @@ jobs:
 
             echo ""
 
-            echo '```mermaid'
+            echo "```mermaid"
 
-            echo 'flowchart LR'
+            echo "flowchart LR"
 
-            echo '  A([Push]):::src --> B[Secret scan]:::scan'
+            echo "  A([Push]):::src --> B[Secret scan]:::scan"
 
-            echo '  B --> C[SAST]:::scan'
+            echo "  B --> C[SAST]:::scan"
 
-            echo '  C --> D[SCA]:::scan'
+            echo "  C --> D[SCA]:::scan"
 
-            echo '  D --> E[Build image]:::build'
+            echo "  D --> E[Build image]:::build"
 
-            echo '  E --> F[Image scan]:::build'
+            echo "  E --> F[Image scan]:::build"
 
-            echo '  F --> G[Sign and SBOM]:::next'
+            echo "  F --> G[Sign and SBOM]:::next"
 
-            echo '  G --> H[DAST]:::next'
+            echo "  G --> H[DAST]:::next"
 
-            echo '  H --> I[Deploy]:::next'
+            echo "  H --> I[Deploy]:::next"
 
-            echo '  classDef src fill:#dfe1e6,stroke:#6b7280,color:#1f2937'
+            echo "  classDef src fill:#dfe1e6,stroke:#6b7280,color:#1f2937"
 
-            echo '  classDef scan fill:#bfe3ff,stroke:#1d6fb8,color:#0a3a61'
+            echo "  classDef scan fill:#bfe3ff,stroke:#1d6fb8,color:#0a3a61"
 
-            echo '  classDef build fill:#cdc9f7,stroke:#5b50c0,color:#272160'
+            echo "  classDef build fill:#cdc9f7,stroke:#5b50c0,color:#272160"
 
-            echo '  classDef next fill:#eceae3,stroke:#9a988f,color:#54534d'
+            echo "  classDef next fill:#eceae3,stroke:#9a988f,color:#54534d"
 
-            echo '```'
+            echo "```"
 
             echo ""
 
@@ -336,15 +337,15 @@ jobs:
 
             echo "| :-- | :-- |"
 
-            echo "| Secret scan | $(icon ${{ needs.secret-scan.result }}) ${{ needs.secret-scan.result }} |"
+            echo "| Secret scan | :$(icon ${{ needs.secret-scan.result }}): ${{ needs.secret-scan.result }} |"
 
-            echo "| SAST | $(icon ${{ needs.sast.result }}) ${{ needs.sast.result }} |"
+            echo "| SAST | :$(icon ${{ needs.sast.result }}): ${{ needs.sast.result }} |"
 
-            echo "| SCA | $(icon ${{ needs.sca.result }}) ${{ needs.sca.result }} |"
+            echo "| SCA | :$(icon ${{ needs.sca.result }}): ${{ needs.sca.result }} |"
 
-            echo "| Build | $(icon ${{ needs.build.result }}) ${{ needs.build.result }} |"
+            echo "| Build | :$(icon ${{ needs.build.result }}): ${{ needs.build.result }} |"
 
-            echo "| Image scan | $(icon ${{ needs.image-scan.result }}) ${{ needs.image-scan.result }} |"
+            echo "| Image scan | :$(icon ${{ needs.image-scan.result }}): ${{ needs.image-scan.result }} |"
 
           } >> "$GITHUB_STEP_SUMMARY"
 
