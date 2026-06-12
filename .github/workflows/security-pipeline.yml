@@ -27,8 +27,6 @@ permissions:
 
 jobs:
 
-  # Gate 1 - Secret scanning
-
   secret-scan:
 
     name: Secret scan (gitleaks)
@@ -52,8 +50,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 
-
-  # Gate 2 - SAST
 
   sast:
 
@@ -91,8 +87,6 @@ jobs:
 
 
 
-  # Gate 3 - SCA (file scan)
-
   sca:
 
     name: SCA (Trivy filesystem)
@@ -122,8 +116,6 @@ jobs:
           format: table
 
 
-
-  # Build - only runs if all three scans above pass
 
   build:
 
@@ -197,8 +189,6 @@ jobs:
 
 
 
-  # Image scan - scans the whole built container, base OS included
-
   image-scan:
 
     name: Image scan (Trivy)
@@ -214,6 +204,8 @@ jobs:
       packages: read
 
     steps:
+
+      - uses: actions/checkout@v4
 
       - name: Log in to GitHub Container Registry
 
@@ -243,6 +235,8 @@ jobs:
 
           ignore-unfixed: true
 
+          trivyignores: .trivyignore
+
           exit-code: '1'
 
           format: table
@@ -263,13 +257,13 @@ jobs:
 
           ignore-unfixed: true
 
+          trivyignores: .trivyignore
+
           exit-code: '1'
 
           format: table
 
 
-
-  # Colourful summary on the run page
 
   summary:
 
@@ -287,7 +281,19 @@ jobs:
 
         run: |
 
-          icon() { case "$1" in success) echo "white_check_mark";; failure) echo "x";; skipped) echo "next_track_button";; *) echo "white_large_square";; esac; }
+          SECRET="${{ needs.secret-scan.result }}"
+
+          SAST="${{ needs.sast.result }}"
+
+          SCA="${{ needs.sca.result }}"
+
+          BUILD="${{ needs.build.result }}"
+
+          IMG="${{ needs.image-scan.result }}"
+
+          cls() { case "$1" in success) echo ok;; failure) echo bad;; skipped) echo skip;; *) echo wait;; esac; }
+
+          icon() { case "$1" in success) echo white_check_mark;; failure) echo x;; skipped) echo next_track_button;; *) echo white_large_square;; esac; }
 
           {
 
@@ -295,7 +301,7 @@ jobs:
 
             echo ""
 
-            echo "Commit \`${GITHUB_SHA:0:7}\` on branch \`${GITHUB_REF_NAME}\`"
+            echo "Commit ${GITHUB_SHA:0:7} on branch ${GITHUB_REF_NAME}"
 
             echo ""
 
@@ -303,29 +309,31 @@ jobs:
 
             echo "flowchart LR"
 
-            echo "  A([Push]):::src --> B[Secret scan]:::scan"
+            echo "  A([Push]):::src --> B[Gitleaks]:::$(cls $SECRET)"
 
-            echo "  B --> C[SAST]:::scan"
+            echo "  B --> C[SAST]:::$(cls $SAST)"
 
-            echo "  C --> D[SCA]:::scan"
+            echo "  C --> D[SCA]:::$(cls $SCA)"
 
-            echo "  D --> E[Build image]:::build"
+            echo "  D --> E[Build image]:::$(cls $BUILD)"
 
-            echo "  E --> F[Image scan]:::build"
+            echo "  E --> F[Image scan]:::$(cls $IMG)"
 
-            echo "  F --> G[Sign and SBOM]:::next"
+            echo "  F --> G[Sign + SBOM]:::wait"
 
-            echo "  G --> H[DAST]:::next"
+            echo "  G --> H[DAST]:::wait"
 
-            echo "  H --> I[Deploy]:::next"
+            echo "  H --> I[Deploy]:::wait"
 
             echo "  classDef src fill:#dfe1e6,stroke:#6b7280,color:#1f2937"
 
-            echo "  classDef scan fill:#bfe3ff,stroke:#1d6fb8,color:#0a3a61"
+            echo "  classDef ok fill:#1f9d57,stroke:#0f5c33,color:#ffffff"
 
-            echo "  classDef build fill:#cdc9f7,stroke:#5b50c0,color:#272160"
+            echo "  classDef bad fill:#e5484d,stroke:#a31419,color:#ffffff"
 
-            echo "  classDef next fill:#eceae3,stroke:#9a988f,color:#54534d"
+            echo "  classDef skip fill:#8b8d98,stroke:#5a5b63,color:#ffffff"
+
+            echo "  classDef wait fill:#cdc9f7,stroke:#5b50c0,color:#272160"
 
             echo "```"
 
@@ -337,15 +345,15 @@ jobs:
 
             echo "| :-- | :-- |"
 
-            echo "| Secret scan | :$(icon ${{ needs.secret-scan.result }}): ${{ needs.secret-scan.result }} |"
+            echo "| Gitleaks | :$(icon $SECRET): $SECRET |"
 
-            echo "| SAST | :$(icon ${{ needs.sast.result }}): ${{ needs.sast.result }} |"
+            echo "| SAST | :$(icon $SAST): $SAST |"
 
-            echo "| SCA | :$(icon ${{ needs.sca.result }}): ${{ needs.sca.result }} |"
+            echo "| SCA | :$(icon $SCA): $SCA |"
 
-            echo "| Build | :$(icon ${{ needs.build.result }}): ${{ needs.build.result }} |"
+            echo "| Build | :$(icon $BUILD): $BUILD |"
 
-            echo "| Image scan | :$(icon ${{ needs.image-scan.result }}): ${{ needs.image-scan.result }} |"
+            echo "| Image scan | :$(icon $IMG): $IMG |"
 
           } >> "$GITHUB_STEP_SUMMARY"
 

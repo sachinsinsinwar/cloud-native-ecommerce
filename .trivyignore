@@ -1,0 +1,15 @@
+
+# Build-time Python tools shipped inside the base image (python:3.9-slim).
+
+# They are not imported or executed by the running app (gunicorn + Flask),
+
+# so they are accepted with documented justification instead of blocking the pipeline.
+
+# jaraco.context - vendored inside setuptools, build-only
+
+CVE-2026-23949
+
+# wheel - packaging tool, build-only
+
+CVE-2026-24049
+
