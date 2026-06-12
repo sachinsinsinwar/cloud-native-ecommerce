@@ -70,6 +70,11 @@ spec:
         # Use your actual frontend image
         # Build with: docker build -t your-registry/ecommerce-frontend:v1 ./frontend
         image: ecommerce-frontend:v1
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
         imagePullPolicy: Never
         
         # Resource limits

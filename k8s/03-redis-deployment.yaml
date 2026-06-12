@@ -63,6 +63,11 @@ spec:
       containers:
       - name: redis
         image: redis:7-alpine
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
         
         # Resource limits
         resources:

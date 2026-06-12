@@ -69,6 +69,11 @@ spec:
       - name: frontend
         # Pulls image from Docker Hub
         image: sachinsingh20/ecommerce-frontend:latest
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
         imagePullPolicy: Always
         
         # Resource limits
