@@ -1,0 +1,19 @@
+
+# Use the built-in gitleaks rules, plus the allowlist below.
+
+[extend]
+
+useDefault = true
+
+
+
+[allowlist]
+
+description = "Documented placeholder/example secrets in the K8s manifest. Real secrets are injected via a secret manager and are never committed to git."
+
+paths = [
+
+  '''k8s/01-namespace-config-secrets\.yaml'''
+
+]
+
