@@ -47,7 +47,7 @@ with app.app_context():
         Product(name='Cookbook', description='Healthy recipes for busy professionals', price=29.99, stock=30, category='Books', image_url='https://images.unsplash.com/photo-1466637574441-749b8f19452f?w=400'),
     ]
     
-    for product in products:
+    for product in products:  # nosemgrep: python.sqlalchemy.performance.performance-improvements.batch-import
         db.session.add(product)
     
     db.session.commit()

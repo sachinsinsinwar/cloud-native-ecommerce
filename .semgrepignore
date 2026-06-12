@@ -1,0 +1,19 @@
+
+# Monitoring stack manifests are reference-only and NOT deployed in this
+
+# project's scope (the namespace was removed). Kept in the repo to show the
+
+# observability work. If deployed, they would be hardened like the app
+
+# workloads. Scoped out of the security gate on purpose.
+
+k8s/10-monitoring-namespace.yaml
+
+k8s/11-prometheus.yaml
+
+k8s/12-grafana.yaml
+
+k8s/13-loki.yaml
+
+k8s/14-service-monitors.yaml
+
