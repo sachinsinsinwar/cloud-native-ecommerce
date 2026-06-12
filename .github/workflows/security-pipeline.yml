@@ -1,359 +1,186 @@
-
 name: SecureOps Security Pipeline
 
-
-
 on:
-
   push:
-
     branches: [main, staging]
-
   pull_request:
-
     branches: [main, staging]
-
   workflow_dispatch:
 
-
-
 permissions:
-
   contents: read
-
   security-events: write
 
-
-
 jobs:
-
   secret-scan:
-
     name: Secret scan (gitleaks)
-
     runs-on: ubuntu-latest
-
     steps:
-
       - uses: actions/checkout@v4
-
         with:
-
           fetch-depth: 0
-
       - name: Run gitleaks
-
         uses: gitleaks/gitleaks-action@v2
-
         env:
-
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-
-
   sast:
-
     name: SAST (Semgrep)
-
     runs-on: ubuntu-latest
-
     steps:
-
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
-
         with:
-
           python-version: '3.12'
-
       - name: Install Semgrep
-
         run: python -m pip install --upgrade semgrep
-
       - name: Run Semgrep
-
         run: semgrep scan --config p/python --config p/javascript --config p/secrets --config p/owasp-top-ten --sarif --output semgrep.sarif --error
-
       - name: Upload findings to Security tab
-
         if: always()
-
         uses: github/codeql-action/upload-sarif@v3
-
         with:
-
           sarif_file: semgrep.sarif
 
-
-
   sca:
-
     name: SCA (Trivy filesystem)
-
     runs-on: ubuntu-latest
-
     steps:
-
       - uses: actions/checkout@v4
-
       - name: Trivy dependency scan
-
         uses: aquasecurity/trivy-action@master
-
         with:
-
           scan-type: fs
-
           scan-ref: .
-
           scanners: vuln
-
           severity: HIGH,CRITICAL
-
           exit-code: '1'
-
           format: table
-
-
 
   build:
-
     name: Build and push images
-
     runs-on: ubuntu-latest
-
     needs: [secret-scan, sast, sca]
-
     permissions:
-
       contents: read
-
       packages: write
-
     steps:
-
       - uses: actions/checkout@v4
-
       - name: Log in to GitHub Container Registry
-
         uses: docker/login-action@v3
-
         with:
-
           registry: ghcr.io
-
           username: ${{ github.actor }}
-
           password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Set up Buildx
-
         uses: docker/setup-buildx-action@v3
-
       - name: Build and push backend
-
         uses: docker/build-push-action@v6
-
         with:
-
           context: ./backend
-
           push: true
-
           tags: |
-
             ghcr.io/sachinsinsinwar/ecommerce-backend:${{ github.sha }}
-
             ghcr.io/sachinsinsinwar/ecommerce-backend:latest
-
       - name: Build and push frontend
-
         uses: docker/build-push-action@v6
-
         with:
-
           context: ./frontend
-
           push: true
-
           build-args: |
-
             VITE_API_URL=https://ecommerceapi.sachininfo.xyz
-
           tags: |
-
             ghcr.io/sachinsinsinwar/ecommerce-frontend:${{ github.sha }}
-
             ghcr.io/sachinsinsinwar/ecommerce-frontend:latest
 
-
-
   image-scan:
-
     name: Image scan (Trivy)
-
     runs-on: ubuntu-latest
-
     needs: build
-
     permissions:
-
       contents: read
-
       packages: read
-
     steps:
-
       - uses: actions/checkout@v4
-
       - name: Log in to GitHub Container Registry
-
         uses: docker/login-action@v3
-
         with:
-
           registry: ghcr.io
-
           username: ${{ github.actor }}
-
           password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Scan backend image
-
         uses: aquasecurity/trivy-action@master
-
         with:
-
           scan-type: image
-
           image-ref: ghcr.io/sachinsinsinwar/ecommerce-backend:${{ github.sha }}
-
           scanners: vuln
-
           severity: HIGH,CRITICAL
-
           ignore-unfixed: true
-
           trivyignores: .trivyignore
-
           exit-code: '1'
-
           format: table
-
       - name: Scan frontend image
-
         uses: aquasecurity/trivy-action@master
-
         with:
-
           scan-type: image
-
           image-ref: ghcr.io/sachinsinsinwar/ecommerce-frontend:${{ github.sha }}
-
           scanners: vuln
-
           severity: HIGH,CRITICAL
-
           ignore-unfixed: true
-
           trivyignores: .trivyignore
-
           exit-code: '1'
-
           format: table
-
-
 
   summary:
-
     name: Pipeline summary
-
     runs-on: ubuntu-latest
-
     needs: [secret-scan, sast, sca, build, image-scan]
-
     if: always()
-
     steps:
-
       - name: Write colourful summary
-
         run: |
-
           SECRET="${{ needs.secret-scan.result }}"
-
           SAST="${{ needs.sast.result }}"
-
           SCA="${{ needs.sca.result }}"
-
           BUILD="${{ needs.build.result }}"
-
           IMG="${{ needs.image-scan.result }}"
-
           cls() { case "$1" in success) echo ok;; failure) echo bad;; skipped) echo skip;; *) echo wait;; esac; }
-
           icon() { case "$1" in success) echo white_check_mark;; failure) echo x;; skipped) echo next_track_button;; *) echo white_large_square;; esac; }
-
           {
-
             echo "# SecureOps Security Pipeline"
-
             echo ""
-
             echo "Commit ${GITHUB_SHA:0:7} on branch ${GITHUB_REF_NAME}"
-
             echo ""
-
             echo '```mermaid'
-
             echo "flowchart LR"
-
-            echo "  A([Push]):::src --> B[Gitleaks]:::$(cls $SECRET)"
-
-            echo "  B --> C[SAST]:::$(cls $SAST)"
-
-            echo "  C --> D[SCA]:::$(cls $SCA)"
-
-            echo "  D --> E[Build image]:::$(cls $BUILD)"
-
-            echo "  E --> F[Image scan]:::$(cls $IMG)"
-
-            echo "  F --> G[Sign + SBOM]:::wait"
-
-            echo "  G --> H[DAST]:::wait"
-
-            echo "  H --> I[Deploy]:::wait"
-
+            echo "  A[Push] --> B[Gitleaks]"
+            echo "  B --> C[SAST]"
+            echo "  C --> D[SCA]"
+            echo "  D --> E[Build]"
+            echo "  E --> F[Image scan]"
+            echo "  F --> G[Sign + SBOM]"
+            echo "  G --> H[DAST]"
+            echo "  H --> I[Deploy]"
+            echo "  class A src"
+            echo "  class B $(cls $SECRET)"
+            echo "  class C $(cls $SAST)"
+            echo "  class D $(cls $SCA)"
+            echo "  class E $(cls $BUILD)"
+            echo "  class F $(cls $IMG)"
+            echo "  class G,H,I wait"
             echo "  classDef src fill:#dfe1e6,stroke:#6b7280,color:#1f2937"
-
             echo "  classDef ok fill:#1f9d57,stroke:#0f5c33,color:#ffffff"
-
             echo "  classDef bad fill:#e5484d,stroke:#a31419,color:#ffffff"
-
             echo "  classDef skip fill:#8b8d98,stroke:#5a5b63,color:#ffffff"
-
             echo "  classDef wait fill:#cdc9f7,stroke:#5b50c0,color:#272160"
-
             echo '```'
-
             echo ""
-
             echo "## This run"
-
             echo "| Stage | Result |"
-
             echo "| :-- | :-- |"
-
             echo "| Gitleaks | :$(icon $SECRET): $SECRET |"
-
             echo "| SAST | :$(icon $SAST): $SAST |"
-
             echo "| SCA | :$(icon $SCA): $SCA |"
-
             echo "| Build | :$(icon $BUILD): $BUILD |"
-
             echo "| Image scan | :$(icon $IMG): $IMG |"
-
           } >> "$GITHUB_STEP_SUMMARY"
-
