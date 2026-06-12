@@ -305,7 +305,7 @@ jobs:
 
             echo ""
 
-            echo "```mermaid"
+            echo '```mermaid'
 
             echo "flowchart LR"
 
@@ -335,7 +335,7 @@ jobs:
 
             echo "  classDef wait fill:#cdc9f7,stroke:#5b50c0,color:#272160"
 
-            echo "```"
+            echo '```'
 
             echo ""
 
