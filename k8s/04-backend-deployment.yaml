@@ -90,13 +90,13 @@ spec:
       containers:
       - name: backend
         # Pulls image from Docker Hub
-        image: sachinsingh20/ecommerce-backend:latest
+        image: ghcr.io/sachinsinsinwar/ecommerce-backend:latest
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
             drop:
               - ALL
-        imagePullPolicy: Always
+        imagePullPolicy: IfNotPresent
         
         # Resource requests and limits
         # Adjust based on actual usage

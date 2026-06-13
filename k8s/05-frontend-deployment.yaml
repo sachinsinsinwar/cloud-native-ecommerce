@@ -68,13 +68,13 @@ spec:
       containers:
       - name: frontend
         # Pulls image from Docker Hub
-        image: sachinsingh20/ecommerce-frontend:latest
+        image: ghcr.io/sachinsinsinwar/ecommerce-frontend:latest
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
             drop:
               - ALL
-        imagePullPolicy: Always
+        imagePullPolicy: IfNotPresent
         
         # Resource limits
         resources:
